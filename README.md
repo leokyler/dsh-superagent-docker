@@ -72,6 +72,31 @@ The log ends with the panel URL including its token:
 Open it, choose **Superagent** in the sidebar, and work through the setup problems
 the Overview lists.
 
+### Without compose
+
+The image needs no compose features, so any Docker-compatible CLI works — including
+ones that only implement `build`/`run` (for example `wslc` on Windows). The run
+flags mirror the compose file:
+
+```bash
+docker build -t dsh-superagent:local .
+mkdir -p repos
+docker run -d --name dsh-superagent --restart unless-stopped \
+  -p 127.0.0.1:3082:13082 \
+  -e DSH_SUPERAGENT_ACCESS=proxy \
+  -e DSH_SUPERAGENT_PUBLISHED_PORT=3082 \
+  -v dsh-home:/home/node/.dsh \
+  -v "$PWD/repos":/home/node/src \
+  dsh-superagent:local
+```
+
+On native Linux, drop `-p` and use `--network host -e DSH_SUPERAGENT_ACCESS=host`
+instead. Replace `docker` with your CLI; `logs`, `exec` and `rm` follow the same
+names.
+
+Behind a registry mirror (Docker Hub is unreachable on some networks), build with
+`--build-arg BASE_IMAGE=<mirror>/library/node:24-bookworm`.
+
 ### Signing in the agent account
 
 Preferred, interactive but painless — it prints a code you paste in your own

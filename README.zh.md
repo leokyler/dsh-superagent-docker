@@ -52,6 +52,26 @@ docker compose exec superagent gh-agent api user --jq .login
 
 或者非交互：把 token 写进 `gh-token` 并打开 compose 里的 secret 挂载，入口脚本会自动登录。
 
+## 没有 compose 也能跑
+
+镜像不含任何 compose 特性，所以任何 Docker 兼容 CLI 都行——包括只实现 `build`/`run` 的（例如 Windows 上的 `wslc`）。参数与 compose 一一对应：
+
+```bash
+docker build -t dsh-superagent:local .
+mkdir -p repos
+docker run -d --name dsh-superagent --restart unless-stopped \
+  -p 127.0.0.1:3082:13082 \
+  -e DSH_SUPERAGENT_ACCESS=proxy \
+  -e DSH_SUPERAGENT_PUBLISHED_PORT=3082 \
+  -v dsh-home:/home/node/.dsh \
+  -v "$PWD/repos":/home/node/src \
+  dsh-superagent:local
+```
+
+原生 Linux 可以去掉 `-p`，改用 `--network host -e DSH_SUPERAGENT_ACCESS=host`。把 `docker` 换成你的 CLI 即可，`logs` / `exec` / `rm` 同名。
+
+网络到不了 Docker Hub 时，用 `--build-arg BASE_IMAGE=<镜像源>/library/node:24-bookworm` 换个源构建。
+
 ## 面板里要配的四块
 
 | 位置 | 内容 |

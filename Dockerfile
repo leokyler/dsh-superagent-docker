@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 #
 # dsh-superagent in a container.
 #
@@ -9,7 +8,10 @@
 #
 # Build:  docker build -t dsh-superagent:local .
 
-FROM node:24-bookworm
+# Override to build behind a registry mirror, e.g.
+#   --build-arg BASE_IMAGE=docker.m.daocloud.io/library/node:24-bookworm
+ARG BASE_IMAGE=node:24-bookworm
+FROM ${BASE_IMAGE}
 
 ARG DSH_VERSION=0.2.1-rc.3
 ARG SUPERAGENT_REPO=https://github.com/deepseek-ai/dsh-superagent-prototype.git
