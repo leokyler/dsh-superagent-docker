@@ -54,9 +54,11 @@ RUN git clone --depth 1 --branch "${SUPERAGENT_REF}" "${SUPERAGENT_REPO}" dsh-su
 
 # Directories a mounted volume inherits ownership from, so a fresh named volume
 # is writable by `node` instead of being created root-owned.
+# The checkout is also chowned: scripts/dsh-superagent writes .artifacts/ (logs,
+# control files) inside it, and the image runs as `node`.
 RUN mkdir -p /home/node/.dsh /home/node/.config/gh-agent /home/node/.local/bin \
              /home/node/src /home/node/.tmux \
- && chown -R node:node /home/node
+ && chown -R node:node /home/node /opt/dsh-superagent
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod 0755 /usr/local/bin/entrypoint.sh
