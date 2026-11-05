@@ -1,0 +1,42 @@
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build -t dsh-superagent:ci --build-arg SUPERAGENT_REF=main .
+
+      - name: Check the prerequisites inside the image
+        run: |
+          docker run --rm --entrypoint /bin/bash dsh-superagent:ci -lc '
+            set -e
+            python3 --version
+            tmux -V
+            gh --version | head -1
+            node -v
+            dsh --version
+            pnpm --version
+          '
+
+      - name: Check the bundle built, and the patch applied
+        run: |
+          docker run --rm --entrypoint /bin/bash dsh-superagent:ci -lc '
+            set -e
+            test -f /opt/dsh-superagent/lib/index.js
+            test -f /opt/dsh-superagent/lib/client.js
+            grep -q "SERVICE_COMMANDS" /opt/dsh-superagent/scripts/dsh-superagent
+            echo "bundle + patch OK"
+          '
+
+      - name: Validate compose and entrypoint syntax
+        run: |
+          docker compose config > /dev/null
+          bash -n entrypoint.sh scripts/smoke-test.sh

@@ -1,0 +1,28 @@
+diff --git a/scripts/dsh-superagent b/scripts/dsh-superagent
+index 59c0429..65e1158 100755
+--- a/scripts/dsh-superagent
++++ b/scripts/dsh-superagent
+@@ -25,6 +25,8 @@ ROOT = Path(__file__).resolve().parent.parent
+ ARTIFACTS = ROOT / '.artifacts'
+ CONTROL = ARTIFACTS / 'control'
+ KEEP_LOGS = 20
++# `ps -o ucomm=` shows the thread name on current Node, not the binary name.
++SERVICE_COMMANDS = ('node', 'dsh', 'MainThread')
+ 
+ 
+ def control(profile):
+@@ -65,12 +67,12 @@ def ps(*options, check=False):
+ 
+ def running(pid, profile):
+     """Return whether `pid` is currently running the DSH service for `profile` (`ps -p` returns nothing once exited)."""
+-    return any(found == pid and name in ('node', 'dsh') and serves(args, profile) for found, name, args in ps('-p', str(pid)))
++    return any(found == pid and name in SERVICE_COMMANDS and serves(args, profile) for found, name, args in ps('-p', str(pid)))
+ 
+ 
+ def processes(profile):
+     """Return PIDs of all running DSH service processes for `profile`, including instances started outside this script and the recorded `service.pid` while still running."""
+-    found = [pid for pid, name, args in ps('-ax', check=True) if name in ('node', 'dsh') and serves(args, profile)]
++    found = [pid for pid, name, args in ps('-ax', check=True) if name in SERVICE_COMMANDS and serves(args, profile)]
+     try:
+         pid = int((control(profile) / 'service.pid').read_text())
+     except (OSError, ValueError):

@@ -1,0 +1,38 @@
+services:
+  superagent:
+    build:
+      context: .
+      args:
+        # Must satisfy engines.dsh (^0.2.1-alpha.2) in the bundle's package.json.
+        DSH_VERSION: "0.2.1-rc.3"
+        SUPERAGENT_REF: main
+    image: dsh-superagent:local
+    container_name: dsh-superagent
+    restart: unless-stopped
+
+    # The panel listens on loopback inside the container, so the published port
+    # hits the socat proxy (13082), which forwards to 127.0.0.1:3082. The browser
+    # must still use localhost:<SUPERAGENT_PORT>, because the management API
+    # checks that the Host header's port equals the webserver port.
+    ports:
+      - "127.0.0.1:${SUPERAGENT_PORT:-3082}:13082"
+
+    environment:
+      DSH_SUPERAGENT_ACCESS: proxy
+      DSH_SUPERAGENT_PORT: "3082"
+      DSH_SUPERAGENT_PROXY_PORT: "13082"
+      DSH_SUPERAGENT_PUBLISHED_PORT: "${SUPERAGENT_PORT:-3082}"
+      # Set to 0 to disable the 60s self-heal loop.
+      DSH_SUPERAGENT_SUPERVISE: "${SUPERAGENT_SUPERVISE:-1}"
+
+    volumes:
+      # Sessions, profiles, credentials and the plugin state dir: the one thing
+      # worth backing up.
+      - dsh-home:/home/node/.dsh
+      # Where the agent clones and keeps one worktree per Ticket.
+      - ${SUPERAGENT_REPOS:-./repos}:/home/node/src
+      # Alternative to the browser device-flow login (see README):
+      # - ./gh-token:/run/secrets/gh-token:ro
+
+volumes:
+  dsh-home:
