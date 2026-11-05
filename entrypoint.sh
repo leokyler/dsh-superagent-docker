@@ -44,11 +44,17 @@ if [ ! -d "$DSH_HOME/profiles/$PROFILE" ]; then
 fi
 
 PROFILE_DIR="$DSH_HOME/profiles/$PROFILE"
-if [ ! -f "$PROFILE_DIR/cordis.patch.yml" ]; then
-  log "writing $PROFILE_DIR/cordis.patch.yml (stateDir=$STATE_DIR)"
+PATCH_FILE="$PROFILE_DIR/cordis.patch.yml"
+# The template already ships an empty cordis.patch.yml, so "the file is missing"
+# is the wrong test: without this marker the machine settings below never apply,
+# the webserver stays on its default port and stateDir is reported missing.
+if ! grep -q 'managed-by: dsh-superagent-docker' "$PATCH_FILE" 2>/dev/null; then
+  log "writing $PATCH_FILE (stateDir=$STATE_DIR, port=$PORT)"
+  [ -f "$PATCH_FILE" ] && cp "$PATCH_FILE" "$PATCH_FILE.before-docker-$(date +%s)"
   mkdir -p "$STATE_DIR"
-  cat > "$PROFILE_DIR/cordis.patch.yml" <<YAML
-# Written by the container entrypoint. Replace it to change machine settings.
+  cat > "$PATCH_FILE" <<YAML
+# managed-by: dsh-superagent-docker
+# Replace or edit this file to change machine settings.
 - id: webserver
   config:
     host: 127.0.0.1

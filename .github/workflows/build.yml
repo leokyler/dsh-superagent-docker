@@ -100,6 +100,13 @@ jobs:
           echo "status exit=$code"
           test "$code" = "3"
 
+      - name: Assert DSH bound the port the proxy forwards to
+        run: |
+          set -euo pipefail
+          docker exec dsh-superagent sh -c \
+            'grep -q "dsh web: http://127.0.0.1:3082/" $(ls -t /opt/dsh-superagent/.artifacts/dsh-superagent-*.log | head -1)'
+          echo "DSH bound 3082"
+
       - name: Assert the panel URL with a token was printed
         run: |
           set -euo pipefail
