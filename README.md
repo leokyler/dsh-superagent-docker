@@ -72,6 +72,17 @@ The log ends with the panel URL including its token:
 Open it, choose **Superagent** in the sidebar, and work through the setup problems
 the Overview lists.
 
+### Prebuilt image
+
+CI publishes `ghcr.io/<owner>/dsh-superagent-docker` on every push to the default
+branch, tagged `latest` and `sha-<short>`, but only after the build and runtime
+jobs pass. The package inherits this repository's visibility, so a private
+repository needs `docker login ghcr.io` first:
+
+```bash
+docker pull ghcr.io/<owner>/dsh-superagent-docker:latest
+```
+
 ### Without compose
 
 The image needs no compose features, so any Docker-compatible CLI works — including

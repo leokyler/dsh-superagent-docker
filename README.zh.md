@@ -52,6 +52,16 @@ docker compose exec superagent gh-agent api user --jq .login
 
 或者非交互：把 token 写进 `gh-token` 并打开 compose 里的 secret 挂载，入口脚本会自动登录。
 
+## 预构建镜像
+
+每次推送到默认分支，CI 会在 `build` 与 `runtime` 两个作业都通过后，把镜像发布到
+`ghcr.io/<owner>/dsh-superagent-docker`，标签为 `latest` 与 `sha-<short>`。包会继承仓库可见性，
+私有仓库需要先 `docker login ghcr.io`：
+
+```bash
+docker pull ghcr.io/<owner>/dsh-superagent-docker:latest
+```
+
 ## 没有 compose 也能跑
 
 镜像不含任何 compose 特性，所以任何 Docker 兼容 CLI 都行——包括只实现 `build`/`run` 的（例如 Windows 上的 `wslc`）。参数与 compose 一一对应：
