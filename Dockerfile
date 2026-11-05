@@ -37,7 +37,9 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 # The pinned DSH must satisfy engines.dsh (^0.2.1-alpha.2) in the bundle.
-RUN corepack enable && npm install -g "pnpm@11" "@deepseek-ai/dsh@${DSH_VERSION}"
+# pnpm comes from npm, not `corepack enable`: corepack creates
+# /usr/local/bin/pnpm first and the global install then fails with EEXIST.
+RUN npm install -g "pnpm@11" "@deepseek-ai/dsh@${DSH_VERSION}"
 
 WORKDIR /opt
 COPY patches/ /tmp/patches/
