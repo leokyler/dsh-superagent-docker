@@ -42,9 +42,10 @@ jobs:
           bash -n entrypoint.sh scripts/smoke-test.sh
 
   # The build job proves the image; this job proves the entrypoint: profile
-  # creation, bundle install, the socat hop, tmux start, DSH boot and the token
-  # line. It needs no model provider, no GitHub account and no bot: setup is
-  # expected to stop at "no repository", which is what the panel fixes.
+  # creation, bundle install, the socat hop, tmux start, DSH boot, the token
+  # line, and status reporting "setup waits". It needs no model provider, no
+  # GitHub account and no bot, because a fresh install is expected to stop at
+  # "no repository" — which is exactly what the panel then fixes.
   runtime:
     runs-on: ubuntu-latest
     needs: image
@@ -54,22 +55,30 @@ jobs:
       - name: Build the image
         run: docker build -t dsh-superagent:ci .
 
-      - name: Start it and wait for the management API
+      - name: Start it
         run: |
           set -euo pipefail
           docker run -d --name dsh-superagent -p 127.0.0.1:3082:13082 \
-            -e DSH_SUPERAGENT_ACCESS=proxy -e DSH_SUPERAGENT_PUBLISHED_PORT=3082 \
+            -e DSH_SUPERAGENT_ACCESS=proxy \
+            -e DSH_SUPERAGENT_PUBLISHED_PORT=3082 \
+            -e DSH_SUPERAGENT_SUPERVISE=0 \
             dsh-superagent:ci
-          for _ in $(seq 1 60); do
-            if curl -sf -H 'x-orchestrator-request: 1' \
-                 http://127.0.0.1:3082/orchestrator/api/state > state.json; then
-              echo "management API answered"; break
-            fi
-            sleep 3
-          done
-          test -s state.json
 
-      - name: Assert the container is running and waiting for setup
+      - name: Wait for the management API
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 100); do
+            if curl -sf --max-time 5 -H 'x-orchestrator-request: 1' \
+                 http://127.0.0.1:3082/orchestrator/api/state > state.json; then
+              echo "management API answered"
+              exit 0
+            fi
+            sleep 4
+          done
+          echo "the panel never answered through the proxy" >&2
+          exit 1
+
+      - name: Assert a fresh install stops at "no repository"
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -77,11 +86,15 @@ jobs:
           d = json.load(open("state.json"))
           problem = (d.get("setup") or {}).get("problem") or {}
           print("setup problem:", json.dumps(problem, ensure_ascii=False))
-          # With no account configured the Source has no repository yet: exactly
-          # the state a fresh install must reach before a person fills the panel.
+          # No account is configured, so the Source has no repository yet: the
+          # state every fresh install must reach before a person fills the panel.
           assert problem.get("code") == "repositoryUnset", problem
+          assert (d.get("health") or {}).get("runtime", {}).get("state") in ("ready", "paused"), d.get("health")
           PY
-          # 3 = running, setup waits. That is the success case here.
+
+      - name: Assert status reports "setup waits" (exit 3)
+        run: |
+          set -euo pipefail
           code=0
           docker exec dsh-superagent scripts/dsh-superagent status || code=$?
           echo "status exit=$code"
@@ -89,12 +102,27 @@ jobs:
 
       - name: Assert the panel URL with a token was printed
         run: |
-          docker logs dsh-superagent 2>&1 | tee container.log
-          grep -Eq 'panel: http://localhost:3082/\?token=[A-Za-z0-9_-]+' container.log
+          set -euo pipefail
+          for _ in $(seq 1 60); do
+            docker logs dsh-superagent > container.log 2>&1 || true
+            if grep -Eq 'panel: http://localhost:3082/\?token=[A-Za-z0-9_-]+' container.log; then
+              grep -E 'panel: http://localhost' container.log
+              exit 0
+            fi
+            sleep 4
+          done
+          echo "no panel URL was printed" >&2
+          cat container.log
+          exit 1
 
-      - name: Container logs on failure
+      - name: Service log on failure
         if: failure()
-        run: docker logs dsh-superagent || true
+        run: |
+          echo "--- docker logs ---"
+          docker logs dsh-superagent || true
+          echo "--- dsh-superagent .artifacts log ---"
+          docker exec dsh-superagent sh -c \
+            'cat $(ls -t /opt/dsh-superagent/.artifacts/dsh-superagent-*.log | head -1)' || true
 
       - name: Clean up
         if: always()

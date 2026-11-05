@@ -13,15 +13,25 @@ PROXY_PORT="${DSH_SUPERAGENT_PROXY_PORT:-13082}"
 PUBLISHED_PORT="${DSH_SUPERAGENT_PUBLISHED_PORT:-3082}"
 ACCESS="${DSH_SUPERAGENT_ACCESS:-proxy}"   # proxy | host
 SUPERVISE="${DSH_SUPERAGENT_SUPERVISE:-1}"
+BOOT_GRACE="${DSH_SUPERAGENT_BOOT_GRACE:-120}"
 GH_TOKEN_FILE="${GH_TOKEN_FILE:-/run/secrets/gh-token}"
 DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
 STATE_DIR="${DSH_SUPERAGENT_STATE_DIR:-$DSH_HOME/state/superagent}"
+API="http://127.0.0.1:$PORT/orchestrator/api/state"
 
 export TMUX_TMPDIR="${TMUX_TMPDIR:-$HOME/.tmux}"
 mkdir -p "$TMUX_TMPDIR"
 
 cd /opt/dsh-superagent
 log() { printf '[superagent] %s\n' "$*"; }
+
+service() { scripts/dsh-superagent --profile "$PROFILE" --url "http://127.0.0.1:$PORT" "$@"; }
+status_code() {
+  local code=0
+  service status > /dev/null 2>&1 || code=$?
+  return "$code"
+}
+api_ready() { curl -sf -o /dev/null --max-time 5 -H 'x-orchestrator-request: 1' "$API"; }
 
 # --- 1. profile + bundle, once -----------------------------------------------
 # `--from-default-profile` replaces an existing profile and deletes its
@@ -84,62 +94,69 @@ case "$ACCESS" in
     ;;
 esac
 
-# --- 4. start --------------------------------------------------------------
-status_code() {
-  local code=0
-  scripts/dsh-superagent --profile "$PROFILE" --url "http://127.0.0.1:$PORT" \
-    status > /dev/null 2>&1 || code=$?
-  return "$code"
-}
-
+# --- 4. start, then wait for the API before judging anything ----------------
 if ! status_code; then
   log "starting dsh-superagent (tmux session dsh-$PROFILE)"
-  scripts/dsh-superagent --profile "$PROFILE" --url "http://127.0.0.1:$PORT" start || true
+  service start || true
 fi
 
-# Same rule as the upstream hourly check: only exit 1 (not running) is fixed by
-# a restart. 2 (a part errors) and 3 (setup waits) need a person.
+ready=0
+for _ in $(seq 1 90); do
+  if api_ready; then ready=1; break; fi
+  sleep 2
+done
+[ "$ready" = 1 ] && log "management API is answering" || log "management API did not answer within 180s"
+
+# --- 5. self-heal -----------------------------------------------------------
+# Same rule as the upstream hourly check: only exit 1 (not running) is fixed by a
+# restart. 2 (a part errors) and 3 (setup waits) need a person. A single failure
+# is often a slow first boot or a model turn, so two in a row are required, and
+# nothing restarts during the boot grace period.
 if [ "$SUPERVISE" = "1" ]; then
   (
+    sleep "$BOOT_GRACE"
+    failures=0
     while true; do
       sleep 60
       code=0
       status_code || code=$?
       if [ "$code" -ne 0 ] && [ "$code" -ne 2 ] && [ "$code" -ne 3 ]; then
-        log "status exited $code; restarting"
-        scripts/dsh-superagent --profile "$PROFILE" --url "http://127.0.0.1:$PORT" \
-          --respect-stop restart > /dev/null 2>&1 || true
+        failures=$((failures + 1))
+        log "status exited $code ($failures in a row)"
+        if [ "$failures" -ge 2 ]; then
+          log "restarting"
+          service --respect-stop restart > /dev/null 2>&1 || true
+          failures=0
+          sleep 60
+        fi
+      else
+        failures=0
       fi
     done
   ) &
 fi
 
-# --- 5. tell the operator where to look -------------------------------------
+# --- 6. tell the operator where to look -------------------------------------
 LOG_FILE=$(ls -t .artifacts/dsh-superagent-*.log 2>/dev/null | head -1 || true)
 TOKEN=""
-for _ in $(seq 1 30); do
-  if [ -n "$LOG_FILE" ]; then
-    TOKEN=$(grep -o 'token=[A-Za-z0-9_-]*' "$LOG_FILE" 2>/dev/null | head -1 | cut -d= -f2 || true)
-  fi
-  [ -n "$TOKEN" ] && break
-  sleep 2
-  LOG_FILE=$(ls -t .artifacts/dsh-superagent-*.log 2>/dev/null | head -1 || true)
-done
+if [ -n "$LOG_FILE" ]; then
+  TOKEN=$(grep -o 'token=[A-Za-z0-9_-]*' "$LOG_FILE" 2>/dev/null | head -1 | cut -d= -f2 || true)
+fi
 
-sleep 2
 code=0
 status_code || code=$?
 case "$code" in
   0) log "ready" ;;
-  1) log "not running; see the newest .artifacts/dsh-superagent-$PROFILE-*.log" ;;
+  1) log "not running; see $LOG_FILE" ;;
   2) log "running, but a part reports an error; scripts/dsh-superagent status lists 'errors'" ;;
   3) log "running, but setup waits: open the panel Overview and configure a model, the GitHub Source and the Policy" ;;
+  *) log "status exited $code" ;;
 esac
 
 if [ -n "$TOKEN" ]; then
   log "panel: http://localhost:$PUBLISHED_PORT/?token=$TOKEN"
 else
-  log "panel: http://localhost:$PUBLISHED_PORT/ (token not found in $LOG_FILE)"
+  log "panel: http://localhost:$PUBLISHED_PORT/ (no token in ${LOG_FILE:-<no log>})"
 fi
 
 exec tail -f /dev/null
