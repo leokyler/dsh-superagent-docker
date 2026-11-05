@@ -57,8 +57,9 @@ docker compose exec superagent gh-agent api user --jq .login
 每次推送到默认分支，CI 会在 `build` 与 `runtime` 两个作业都通过后，把镜像发布到
 `ghcr.io/<owner>/dsh-superagent-docker`，标签为 `latest` 与 `sha-<short>`。两点要注意：
 
-- GHCR 的包**默认私有**，与仓库可见性无关。想免登录拉取，要去包设置里改成 public
-  （Profile → Packages → 该包 → Package settings → Change visibility）；保持私有就先登录。
+- 只要保持 *Inherit access from source repository*（默认开启），包的可见性就跟随源仓库：
+  公开仓库得到公开的包（此处用匿名 manifest 请求验证过）。关掉继承、或源仓库是私有的，
+  拉取就需要登录。设置位置：Profile → Packages → 该包 → Package settings。
 - 发布需要仓库的 *Workflow permissions* 允许写令牌（Settings → Actions → General → Workflow permissions）。
   用默认的只读设置时，最后一步 manifest 推送会 `error from registry: denied`，
   因为工作流里的 `packages: write` 不能超过仓库设置。

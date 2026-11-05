@@ -80,10 +80,11 @@ jobs pass.
 
 Two things to know:
 
-- A GHCR package is **private by default**, independently of the repository's
-  visibility. To pull anonymously, set the package to public in its settings
-  (Profile → Packages → the package → Package settings → Change visibility), or
-  keep it private and log in first.
+- Package visibility follows the source repository while *Inherit access from
+  source repository* stays on, which is the default: a public repository gives a
+  public package (checked here with an anonymous manifest request). Turn
+  inheritance off, or publish from a private repository, and pulls need a login.
+  The setting lives under Profile → Packages → the package → Package settings.
 - Publishing needs the repository's *Workflow permissions* to allow write
   tokens (Settings → Actions → General → Workflow permissions). With the
   restrictive default, the last manifest push fails with

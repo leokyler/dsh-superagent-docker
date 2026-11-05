@@ -1,8 +1,11 @@
 name: build
 
 on:
+  # Documentation-only changes cannot break the image, so they skip the build.
   push:
+    paths-ignore: ['**.md', 'LICENSE', '.gitignore', '.dockerignore']
   pull_request:
+    paths-ignore: ['**.md', 'LICENSE', '.gitignore', '.dockerignore']
   workflow_dispatch:
 
 jobs:
