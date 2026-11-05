@@ -76,11 +76,23 @@ the Overview lists.
 
 CI publishes `ghcr.io/<owner>/dsh-superagent-docker` on every push to the default
 branch, tagged `latest` and `sha-<short>`, but only after the build and runtime
-jobs pass. The package inherits this repository's visibility, so a private
-repository needs `docker login ghcr.io` first:
+jobs pass.
+
+Two things to know:
+
+- A GHCR package is **private by default**, independently of the repository's
+  visibility. To pull anonymously, set the package to public in its settings
+  (Profile → Packages → the package → Package settings → Change visibility), or
+  keep it private and log in first.
+- Publishing needs the repository's *Workflow permissions* to allow write
+  tokens (Settings → Actions → General → Workflow permissions). With the
+  restrictive default, the last manifest push fails with
+  `error from registry: denied`, because `packages: write` in the workflow
+  cannot exceed the repository setting.
 
 ```bash
-docker pull ghcr.io/<owner>/dsh-superagent-docker:latest
+docker pull ghcr.io/<owner>/dsh-superagent-docker:latest          # public package
+echo "$TOKEN" | docker login ghcr.io -u <user> --password-stdin   # private package
 ```
 
 ### Without compose
