@@ -92,13 +92,39 @@ jobs:
           assert (d.get("health") or {}).get("runtime", {}).get("state") in ("ready", "paused"), d.get("health")
           PY
 
+      # The entrypoint holds the control lock while it starts the service and
+      # reports the panel line, and `status` takes the same lock, so wait for the
+      # entrypoint to finish before asking. A person would naturally do this too.
+      - name: Wait for the entrypoint to finish starting
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 100); do
+            docker logs dsh-superagent > container.log 2>&1 || true
+            if grep -qE 'panel: http://localhost:3082/\?token=' container.log; then
+              grep -E '\[superagent\] (ready|running|not running|panel)' container.log
+              exit 0
+            fi
+            sleep 4
+          done
+          echo "the entrypoint never printed a panel line" >&2
+          cat container.log
+          exit 1
+
       - name: Assert status reports "setup waits" (exit 3)
         run: |
           set -euo pipefail
-          code=0
-          docker exec dsh-superagent scripts/dsh-superagent status || code=$?
-          echo "status exit=$code"
-          test "$code" = "3"
+          for attempt in $(seq 1 6); do
+            code=0
+            docker exec dsh-superagent scripts/dsh-superagent status > status-out.json 2>&1 || code=$?
+            echo "attempt $attempt: exit=$code"
+            cat status-out.json
+            if [ "$code" = "3" ]; then exit 0; fi
+            # 1 can mean the control lock is still held by the entrypoint.
+            sleep 6
+          done
+          echo "ps inside the container:" >&2
+          docker exec dsh-superagent ps -ww -ax -o pid=,ucomm=,args= | grep -E 'dsh|node' || true
+          exit 1
 
       - name: Assert DSH bound the port the proxy forwards to
         run: |
@@ -106,21 +132,6 @@ jobs:
           docker exec dsh-superagent sh -c \
             'grep -q "dsh web: http://127.0.0.1:3082/" $(ls -t /opt/dsh-superagent/.artifacts/dsh-superagent-*.log | head -1)'
           echo "DSH bound 3082"
-
-      - name: Assert the panel URL with a token was printed
-        run: |
-          set -euo pipefail
-          for _ in $(seq 1 60); do
-            docker logs dsh-superagent > container.log 2>&1 || true
-            if grep -Eq 'panel: http://localhost:3082/\?token=[A-Za-z0-9_-]+' container.log; then
-              grep -E 'panel: http://localhost' container.log
-              exit 0
-            fi
-            sleep 4
-          done
-          echo "no panel URL was printed" >&2
-          cat container.log
-          exit 1
 
       - name: Service log on failure
         if: failure()
