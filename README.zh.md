@@ -113,25 +113,25 @@ git -C /home/node/src/widgets fetch --no-tags \
 
 ## 镜像能构建什么
 
-`node:24-bookworm` 是完整版 Debian，自带 git、make、gcc/g++、python3。本镜像在此基础上补了
-pnpm、gh、tmux、socat、jq、ripgrep、python3-pip 与 python3-venv。Node/TypeScript、C/C++、Python
-仓库可以直接开工。
+基础镜像是 `mcr.microsoft.com/devcontainers/javascript-node:24-bookworm` —— 一个 devcontainer
+镜像，而不是裸 node 镜像。用 `.github/workflows/toolchain.yml` 实测，它自带 git 2.56、
+gcc/g++/make、jq、node 24、pnpm，以及**免密 sudo**（非特权的 `node` 用户）。本镜像再补
+tmux、socat、tini、gh、ripgrep、python3-pip、python3-venv，并把 PATH 上的 pnpm 钉在 11
+（基础镜像带的是 12，而上游工具链是按 11 构建的；版本不对时构建直接失败，而不是悄悄用 12）。
 
-**没有** Go、Rust、Java、Ruby、cmake、sqlite3，也没有 Docker daemon；而且 agent 以非特权的
-`node` 用户运行、没有 `sudo`，干活时无法 `apt-get install`。两种补法：
+Node/TypeScript、C/C++、Python 仓库开箱即用。Go、Rust、Java、Ruby、cmake、sqlite3 和 Docker
+daemon 没有装 —— 但 `node` 有免密 sudo，agent **可以**在干活时自己装。两种做法选一个：
 
 ```bash
-# 1. 构建时装进去（推荐：可复现，不改权限）
+# 可复现：把工具链装进镜像（出了玩票场景我推荐这个）
 docker build --build-arg EXTRA_PACKAGES="golang-go default-jdk cmake" -t dsh-superagent:local .
 
-# 2. 允许 agent 自己装（方便但镜像会变脏）
-#    在 Dockerfile 的 apt 段之后加：
-#      RUN apt-get update && apt-get install -y --no-install-recommends sudo \
-#       && echo 'node ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/node
+# 方便：让 agent 边干边 apt-get install（镜像变可变，同一张工单不同天可能结果不同）
 ```
 
-第 2 种不会削弱容器边界——worker 本来就在容器内以 `danger-full-access` 运行——但镜像变得可变，
-同一张工单在不同天可能给出不同结果。
+`sudo` 并不会削弱容器边界——worker 本来就在容器内以 `danger-full-access` 运行，真正的边界是挂载。
+如果还是想去掉这个特权，把 `BASE_IMAGE` 指向 `docker.m.daocloud.io/library/node:24-bookworm`
+或任意裸 node 镜像；代价是同时失去 jq 和更新的 git，agent 也无法再自己装依赖。
 
 ## `patches/` 里那个补丁
 

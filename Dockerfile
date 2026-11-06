@@ -8,9 +8,13 @@
 #
 # Build:  docker build -t dsh-superagent:local .
 
-# Override to build behind a registry mirror, e.g.
+# A devcontainer image, not a bare node one: it already carries git, gcc/g++/make,
+# jq, node, pnpm and passwordless sudo for the unprivileged `node` user, which is
+# what lets an agent install a repository's dependencies while it works. Measured
+# with .github/workflows/toolchain.yml.
+# Override to pin a mirror or a different variant, e.g.
 #   --build-arg BASE_IMAGE=docker.m.daocloud.io/library/node:24-bookworm
-ARG BASE_IMAGE=node:24-bookworm
+ARG BASE_IMAGE=mcr.microsoft.com/devcontainers/javascript-node:24-bookworm
 FROM ${BASE_IMAGE}
 
 ARG DSH_VERSION=0.2.1-rc.3
@@ -45,7 +49,13 @@ RUN apt-get update \
 # The pinned DSH must satisfy engines.dsh (^0.2.1-alpha.2) in the bundle.
 # pnpm comes from npm, not `corepack enable`: corepack creates
 # /usr/local/bin/pnpm first and the global install then fails with EEXIST.
-RUN npm install -g "pnpm@11" "@deepseek-ai/dsh@${DSH_VERSION}"
+# The base ships pnpm 12, while upstream's tooling is built against pnpm 11, so
+# pin 11 on PATH and fail the build rather than silently building with 12.
+RUN npm install -g "pnpm@11" "@deepseek-ai/dsh@${DSH_VERSION}" \
+ && case "$(pnpm --version)" in \
+      11.*) echo "pnpm $(pnpm --version)" ;; \
+      *) echo "expected pnpm 11 on PATH, got $(pnpm --version)"; exit 1 ;; \
+    esac
 
 WORKDIR /opt
 COPY patches/ /tmp/patches/

@@ -167,28 +167,32 @@ recorded as "would accept" instead of spending worker sessions.
 
 ## What the image can build
 
-`node:24-bookworm` is the full Debian variant, so it already carries git, make,
-gcc/g++ and python3. On top of that this image adds pnpm, gh, tmux, socat, jq,
-ripgrep, python3-pip and python3-venv. That covers Node/TypeScript, C/C++ and
-Python repositories.
+The base is `mcr.microsoft.com/devcontainers/javascript-node:24-bookworm` — a
+devcontainer image rather than a bare node one. Measured with
+`.github/workflows/toolchain.yml`, it ships git 2.56, gcc/g++/make, jq, node 24,
+pnpm and **passwordless sudo** for the unprivileged `node` user. This image adds
+tmux, socat, tini, gh, ripgrep, python3-pip and python3-venv, and pins pnpm 11 on
+PATH (the base ships pnpm 12; upstream's tooling is built against 11, and the
+build fails rather than silently using 12).
 
-It does **not** ship Go, Rust, Java, Ruby, cmake, sqlite3 or a Docker daemon, and
-the agent runs as the unprivileged `node` user without `sudo`, so it cannot
-`apt-get install` while it works. Two ways to close the gap:
+Node/TypeScript, C/C++ and Python repositories work out of the box. Go, Rust,
+Java, Ruby, cmake, sqlite3 and a Docker daemon are not installed — but `node` has
+passwordless sudo, so an agent **can** install what it needs while it works. Pick
+one:
 
 ```bash
-# 1. Add toolchains at build time (recommended: reproducible, no privilege change)
+# Reproducible: bake the toolchains in (what I would use beyond a scratch box)
 docker build --build-arg EXTRA_PACKAGES="golang-go default-jdk cmake" -t dsh-superagent:local .
 
-# 2. Let the agent install what it needs (weaker, but convenient for a scratch box)
-#    add to the Dockerfile after the apt block:
-#      RUN apt-get update && apt-get install -y --no-install-recommends sudo \
-#       && echo 'node ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/node
+# Convenient: let the agent apt-get install as it goes (image becomes mutable, so
+# the same ticket can produce different results on different days)
 ```
 
-Option 2 does not weaken the container boundary — workers already run with
-`danger-full-access` inside it — but it makes the image mutable and the same
-ticket can then produce different results on different days.
+`sudo` does not weaken the container boundary — workers already run with
+`danger-full-access` inside it, and the mounts are the boundary. To drop the
+privilege anyway, point `BASE_IMAGE` at `docker.m.daocloud.io/library/node:24-bookworm`
+or any bare node image; you then also lose jq and the newer git, and the agent
+loses the ability to install dependencies.
 
 ## The patch in `patches/`
 

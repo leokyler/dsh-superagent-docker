@@ -27,6 +27,17 @@ jobs:
             node -v
             dsh --version
             pnpm --version
+            case "$(pnpm --version)" in 11.*) ;; *) echo "pnpm is not 11"; exit 1 ;; esac
+            python3 -m pip --version
+            python3 -m venv /tmp/v && echo "venv OK"
+          '
+
+      - name: Check the agent can install dependencies while it works
+        run: |
+          docker run --rm --entrypoint /bin/bash dsh-superagent:ci -lc '
+            set -e
+            id -un
+            sudo -n true && echo "passwordless sudo OK"
           '
 
       - name: Check the bundle built, and the patch applied
