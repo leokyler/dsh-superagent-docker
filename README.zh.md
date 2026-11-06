@@ -111,6 +111,28 @@ git -C /home/node/src/widgets fetch --no-tags \
 
 试玩期把 `eval` 模式留在 `observe`：主动工作只被记录成“would accept”，不烧 worker session。
 
+## 镜像能构建什么
+
+`node:24-bookworm` 是完整版 Debian，自带 git、make、gcc/g++、python3。本镜像在此基础上补了
+pnpm、gh、tmux、socat、jq、ripgrep、python3-pip 与 python3-venv。Node/TypeScript、C/C++、Python
+仓库可以直接开工。
+
+**没有** Go、Rust、Java、Ruby、cmake、sqlite3，也没有 Docker daemon；而且 agent 以非特权的
+`node` 用户运行、没有 `sudo`，干活时无法 `apt-get install`。两种补法：
+
+```bash
+# 1. 构建时装进去（推荐：可复现，不改权限）
+docker build --build-arg EXTRA_PACKAGES="golang-go default-jdk cmake" -t dsh-superagent:local .
+
+# 2. 允许 agent 自己装（方便但镜像会变脏）
+#    在 Dockerfile 的 apt 段之后加：
+#      RUN apt-get update && apt-get install -y --no-install-recommends sudo \
+#       && echo 'node ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/node
+```
+
+第 2 种不会削弱容器边界——worker 本来就在容器内以 `danger-full-access` 运行——但镜像变得可变，
+同一张工单在不同天可能给出不同结果。
+
 ## `patches/` 里那个补丁
 
 `0001-detect-the-service-process-on-node-24.patch`：在当前的 Node 上，`ps -o ucomm=` 显示的是**线程名**，服务进程会显示成 `MainThread` 而不是 `node`。不修的话 `status` 永远数不到 pid、恒返回 1，自愈循环会反复重启一个健康的服务。Dockerfile 在 clone 之后自动应用；上游修好后删掉这个文件即可（循环会跳过不存在的补丁）。

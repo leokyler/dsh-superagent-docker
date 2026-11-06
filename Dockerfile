@@ -17,6 +17,9 @@ ARG DSH_VERSION=0.2.1-rc.3
 ARG SUPERAGENT_REPO=https://github.com/deepseek-ai/dsh-superagent-prototype.git
 ARG SUPERAGENT_REF=main
 ARG WITH_GIT_LFS=0
+# Anything else the repositories you point the agent at need, e.g.
+#   --build-arg EXTRA_PACKAGES="golang-go default-jdk rustc"
+ARG EXTRA_PACKAGES=""
 
 ENV DEBIAN_FRONTEND=noninteractive \
     TMUX_TMPDIR=/home/node/.tmux
@@ -26,7 +29,8 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # dsh-superagent (it needs 2.48+), so gh comes from GitHub's own apt repository.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      ca-certificates curl gnupg git python3 tmux jq socat tini \
+      ca-certificates curl gnupg git python3 python3-pip python3-venv ripgrep \
+      tmux jq socat tini ${EXTRA_PACKAGES} \
  && install -d -m 0755 /etc/apt/keyrings \
  && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
       -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \

@@ -165,6 +165,31 @@ git -C /home/node/src/widgets fetch --no-tags \
 Keep `eval` mode at `observe` while you are trying it: proactive work is then
 recorded as "would accept" instead of spending worker sessions.
 
+## What the image can build
+
+`node:24-bookworm` is the full Debian variant, so it already carries git, make,
+gcc/g++ and python3. On top of that this image adds pnpm, gh, tmux, socat, jq,
+ripgrep, python3-pip and python3-venv. That covers Node/TypeScript, C/C++ and
+Python repositories.
+
+It does **not** ship Go, Rust, Java, Ruby, cmake, sqlite3 or a Docker daemon, and
+the agent runs as the unprivileged `node` user without `sudo`, so it cannot
+`apt-get install` while it works. Two ways to close the gap:
+
+```bash
+# 1. Add toolchains at build time (recommended: reproducible, no privilege change)
+docker build --build-arg EXTRA_PACKAGES="golang-go default-jdk cmake" -t dsh-superagent:local .
+
+# 2. Let the agent install what it needs (weaker, but convenient for a scratch box)
+#    add to the Dockerfile after the apt block:
+#      RUN apt-get update && apt-get install -y --no-install-recommends sudo \
+#       && echo 'node ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/node
+```
+
+Option 2 does not weaken the container boundary — workers already run with
+`danger-full-access` inside it — but it makes the image mutable and the same
+ticket can then produce different results on different days.
+
 ## The patch in `patches/`
 
 `0001-detect-the-service-process-on-node-24.patch` teaches
