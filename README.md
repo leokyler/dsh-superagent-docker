@@ -172,27 +172,44 @@ devcontainer image rather than a bare node one. Measured with
 `.github/workflows/toolchain.yml`, it ships git 2.56, gcc/g++/make, jq, node 24,
 pnpm and **passwordless sudo** for the unprivileged `node` user. This image adds
 tmux, socat, tini, gh, ripgrep, python3-pip and python3-venv, and pins pnpm 11 on
-PATH (the base ships pnpm 12; upstream's tooling is built against 11, and the
-build fails rather than silently using 12).
+PATH (the base ships pnpm 12; upstream's tooling is built against 11, so the build
+fails rather than silently using 12).
 
 Node/TypeScript, C/C++ and Python repositories work out of the box. Go, Rust,
-Java, Ruby, cmake, sqlite3 and a Docker daemon are not installed — but `node` has
-passwordless sudo, so an agent **can** install what it needs while it works. Pick
-one:
+Java, Ruby, cmake and sqlite3 do not, and there are two ways to add them — pick by
+who you are:
+
+| When | How | For |
+|---|---|---|
+| Container start | `-e DSH_SUPERAGENT_APT_PACKAGES="golang-go default-jdk"` (or `SUPERAGENT_APT_PACKAGES` in `.env`) | using the published image; one image, several repositories; no rebuild |
+| Image build | `--build-arg EXTRA_PACKAGES="golang-go default-jdk"` | a fork you control; offline machines; pinned versions |
+
+**Prefer the start-time list.** It is part of the run configuration, so the image
+stays generic:
 
 ```bash
-# Reproducible: bake the toolchains in (what I would use beyond a scratch box)
-docker build --build-arg EXTRA_PACKAGES="golang-go default-jdk cmake" -t dsh-superagent:local .
-
-# Convenient: let the agent apt-get install as it goes (image becomes mutable, so
-# the same ticket can produce different results on different days)
+docker run -d --name dsh-superagent -p 127.0.0.1:3082:13082 \
+  -e DSH_SUPERAGENT_ACCESS=proxy \
+  -e DSH_SUPERAGENT_APT_PACKAGES="golang-go default-jdk" \
+  -v dsh-home:/home/node/.dsh -v "$PWD/repos:/home/node/src" \
+  ghcr.io/<owner>/dsh-superagent-docker:latest
 ```
 
-`sudo` does not weaken the container boundary — workers already run with
-`danger-full-access` inside it, and the mounts are the boundary. To drop the
-privilege anyway, point `BASE_IMAGE` at `docker.m.daocloud.io/library/node:24-bookworm`
-or any bare node image; you then also lose jq and the newer git, and the agent
-loses the ability to install dependencies.
+How it behaves:
+
+- Installed **before** the service starts, so no ticket ever sees a half-installed
+  toolchain. The list and the image revision are hashed into a marker under
+  `~/.dsh`, so restarting the same image skips the network while a newer image
+  installs again.
+- A failed install does not keep the panel down: the service still starts and the
+  log says what failed, because the panel is where you fix things.
+- Versions follow the distribution at start time. For exact versions, pin them in
+  the list (`golang-go=2:1.22~deb12u1`) or bake them at build time.
+
+`sudo` stays available as an escape hatch, so an agent can still `apt-get install`
+something mid-ticket. That works, but the toolchain then differs between tickets
+and disappears when the container is recreated. Anything an agent installs twice
+belongs in `DSH_SUPERAGENT_APT_PACKAGES`.
 
 ## The patch in `patches/`
 

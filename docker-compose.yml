@@ -6,6 +6,7 @@ services:
         # Must satisfy engines.dsh (^0.2.1-alpha.2) in the bundle's package.json.
         DSH_VERSION: "0.2.1-rc.3"
         SUPERAGENT_REF: main
+        IMAGE_REVISION: "${SUPERAGENT_IMAGE_REVISION:-local}"
     image: dsh-superagent:local
     container_name: dsh-superagent
     restart: unless-stopped
@@ -24,6 +25,10 @@ services:
       DSH_SUPERAGENT_PUBLISHED_PORT: "${SUPERAGENT_PORT:-3082}"
       # Set to 0 to disable the 60s self-heal loop.
       DSH_SUPERAGENT_SUPERVISE: "${SUPERAGENT_SUPERVISE:-1}"
+      # Toolchains this repository needs, installed when the container starts
+      # (the base image has passwordless sudo). Space or comma separated, for
+      # example "golang-go default-jdk". Empty means nothing to install.
+      DSH_SUPERAGENT_APT_PACKAGES: "${SUPERAGENT_APT_PACKAGES:-}"
 
     volumes:
       # Sessions, profiles, credentials and the plugin state dir: the one thing

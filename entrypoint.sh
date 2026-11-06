@@ -82,7 +82,42 @@ if [ -f "$GH_TOKEN_FILE" ] && [ -s "$GH_TOKEN_FILE" ]; then
   fi
 fi
 
-# --- 3. reach the loopback-only panel ---------------------------------------
+# --- 3. packages declared at run time ---------------------------------------
+# Lets the published image serve a repository's toolchain without a rebuild:
+#   docker run -e DSH_SUPERAGENT_APT_PACKAGES="golang-go default-jdk" ...
+# The package list and the image revision form a marker, so restarting the same
+# image does not hit the network, while a new image installs again. Declaring
+# packages here rather than letting an agent install them mid-ticket keeps the
+# toolchain identical for every ticket that runs on this container.
+install_declared_packages() {
+  local list="$1"
+  [ -n "$list" ] || return 0
+  local marker="$DSH_HOME/.apt-packages" wanted
+  wanted=$(printf '%s|%s' "$list" "${DSH_IMAGE_REVISION:-dev}" | sha256sum | cut -d' ' -f1)
+  if [ -f "$marker" ] && [ "$(cat "$marker")" = "$wanted" ]; then
+    log "declared packages already present: $list"
+    return 0
+  fi
+  log "installing declared packages: $list"
+  local attempt
+  for attempt in 1 2 3; do
+    # Word splitting is intended: the value is a package list.
+    # shellcheck disable=SC2086
+    if sudo -n apt-get update -qq && sudo -n apt-get install -y --no-install-recommends $list; then
+      printf '%s' "$wanted" > "$marker"
+      log "declared packages installed: $list"
+      return 0
+    fi
+    log "apt attempt $attempt/3 failed; retrying in 5s"
+    sleep 5
+  done
+  log "WARNING: could not install '$list'; the service still starts."
+  log "         Check the network or the package names, then restart the container."
+  return 1
+}
+install_declared_packages "${DSH_SUPERAGENT_APT_PACKAGES:-}" || true
+
+# --- 4. reach the loopback-only panel ---------------------------------------
 # src/app/http.ts refuses to serve unless the webserver binds 127.0.0.1, and it
 # rejects requests whose Host header is not 127.0.0.1:<port>/localhost:<port>.
 # A published port cannot reach a loopback listener, so proxy mode forwards.
@@ -100,7 +135,7 @@ case "$ACCESS" in
     ;;
 esac
 
-# --- 4. start, then wait for the API before judging anything ----------------
+# --- 5. start, then wait for the API before judging anything ----------------
 if ! status_code; then
   log "starting dsh-superagent (tmux session dsh-$PROFILE)"
   service start || true
@@ -113,7 +148,7 @@ for _ in $(seq 1 90); do
 done
 [ "$ready" = 1 ] && log "management API is answering" || log "management API did not answer within 180s"
 
-# --- 5. self-heal -----------------------------------------------------------
+# --- 6. self-heal -----------------------------------------------------------
 # Same rule as the upstream hourly check: only exit 1 (not running) is fixed by a
 # restart. 2 (a part errors) and 3 (setup waits) need a person. A single failure
 # is often a slow first boot or a model turn, so two in a row are required, and
@@ -142,7 +177,7 @@ if [ "$SUPERVISE" = "1" ]; then
   ) &
 fi
 
-# --- 6. tell the operator where to look -------------------------------------
+# --- 7. tell the operator where to look -------------------------------------
 LOG_FILE=$(ls -t .artifacts/dsh-superagent-*.log 2>/dev/null | head -1 || true)
 TOKEN=""
 if [ -n "$LOG_FILE" ]; then

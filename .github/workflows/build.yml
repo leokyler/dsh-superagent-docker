@@ -15,7 +15,8 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Build the image
-        run: docker build -t dsh-superagent:ci --build-arg SUPERAGENT_REF=main .
+        run: docker build -t dsh-superagent:ci --build-arg SUPERAGENT_REF=main \
+            --build-arg IMAGE_REVISION="${GITHUB_SHA::7}" .
 
       - name: Check the prerequisites inside the image
         run: |
@@ -67,7 +68,7 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: Build the image
-        run: docker build -t dsh-superagent:ci .
+        run: docker build -t dsh-superagent:ci --build-arg IMAGE_REVISION="${GITHUB_SHA::7}" .
 
       - name: Start it
         run: |
@@ -147,6 +148,37 @@ jobs:
             'grep -q "dsh web: http://127.0.0.1:3082/" $(ls -t /opt/dsh-superagent/.artifacts/dsh-superagent-*.log | head -1)'
           echo "DSH bound 3082"
 
+      - name: Declared packages are installed at start, and cached across restarts
+        run: |
+          set -euo pipefail
+          docker run -d --name dsh-pkg -p 127.0.0.1:3083:13082 \
+            -e DSH_SUPERAGENT_ACCESS=proxy -e DSH_SUPERAGENT_PUBLISHED_PORT=3083 \
+            -e DSH_SUPERAGENT_SUPERVISE=0 \
+            -e DSH_SUPERAGENT_APT_PACKAGES=sl \
+            dsh-superagent:ci
+          for _ in $(seq 1 90); do
+            if docker exec dsh-pkg sh -c 'command -v sl' >/dev/null 2>&1; then break; fi
+            sleep 4
+          done
+          docker exec dsh-pkg sh -c 'command -v sl'
+          docker logs dsh-pkg 2>&1 | grep -E 'installing declared packages: sl'
+          docker logs dsh-pkg 2>&1 | grep -E 'declared packages installed: sl'
+          # The list and the image revision form a marker, so a restart of the
+          # same image must not touch the network again.
+          docker restart dsh-pkg > /dev/null
+          for _ in $(seq 1 30); do
+            if docker logs dsh-pkg 2>&1 | grep -q 'declared packages already present: sl'; then
+              echo "restart skipped the install"
+              docker rm -f dsh-pkg
+              exit 0
+            fi
+            sleep 4
+          done
+          echo "a restart reinstalled the packages instead of using the marker" >&2
+          docker logs dsh-pkg || true
+          docker rm -f dsh-pkg
+          exit 1
+
       - name: Service log on failure
         if: failure()
         run: |
@@ -158,7 +190,7 @@ jobs:
 
       - name: Clean up
         if: always()
-        run: docker rm -f dsh-superagent || true
+        run: docker rm -f dsh-superagent dsh-pkg || true
 
   # Publishes the image to GitHub Container Registry on the default branch only,
   # after both other jobs pass. The package inherits the repository's visibility.
@@ -183,6 +215,7 @@ jobs:
           image="ghcr.io/${GITHUB_REPOSITORY,,}"
           short="${GITHUB_SHA::7}"
           docker build \
+            --build-arg IMAGE_REVISION="${short}" \
             --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
             --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
             --label "org.opencontainers.image.licenses=MIT" \

@@ -21,6 +21,10 @@ ARG DSH_VERSION=0.2.1-rc.3
 ARG SUPERAGENT_REPO=https://github.com/deepseek-ai/dsh-superagent-prototype.git
 ARG SUPERAGENT_REF=main
 ARG WITH_GIT_LFS=0
+# Baked in so the entrypoint can tell "same image, already installed" from
+# "new image, install again". CI passes the commit.
+ARG IMAGE_REVISION=dev
+ENV DSH_IMAGE_REVISION=${IMAGE_REVISION}
 # Anything else the repositories you point the agent at need, e.g.
 #   --build-arg EXTRA_PACKAGES="golang-go default-jdk rustc"
 ARG EXTRA_PACKAGES=""

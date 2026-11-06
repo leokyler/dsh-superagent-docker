@@ -117,21 +117,36 @@ git -C /home/node/src/widgets fetch --no-tags \
 镜像，而不是裸 node 镜像。用 `.github/workflows/toolchain.yml` 实测，它自带 git 2.56、
 gcc/g++/make、jq、node 24、pnpm，以及**免密 sudo**（非特权的 `node` 用户）。本镜像再补
 tmux、socat、tini、gh、ripgrep、python3-pip、python3-venv，并把 PATH 上的 pnpm 钉在 11
-（基础镜像带的是 12，而上游工具链是按 11 构建的；版本不对时构建直接失败，而不是悄悄用 12）。
+（基础镜像带 12，上游工具链按 11 构建，版本不对时构建直接失败）。
 
-Node/TypeScript、C/C++、Python 仓库开箱即用。Go、Rust、Java、Ruby、cmake、sqlite3 和 Docker
-daemon 没有装 —— 但 `node` 有免密 sudo，agent **可以**在干活时自己装。两种做法选一个：
+Node/TypeScript、C/C++、Python 仓库开箱即用。Go、Rust、Java、Ruby、cmake、sqlite3 没有，
+补法两种，按"你是谁"选：
+
+| 时机 | 手段 | 适合 |
+|---|---|---|
+| 容器启动 | `-e DSH_SUPERAGENT_APT_PACKAGES="golang-go default-jdk"`（或 `.env` 里的 `SUPERAGENT_APT_PACKAGES`） | 直接用发布镜像；一份镜像服务多个仓库；不想重建 |
+| 构建镜像 | `--build-arg EXTRA_PACKAGES="golang-go default-jdk"` | 自己 fork 维护；离线环境；要钉死版本 |
+
+**优先用启动时列表**，它属于运行配置，镜像保持通用：
 
 ```bash
-# 可复现：把工具链装进镜像（出了玩票场景我推荐这个）
-docker build --build-arg EXTRA_PACKAGES="golang-go default-jdk cmake" -t dsh-superagent:local .
-
-# 方便：让 agent 边干边 apt-get install（镜像变可变，同一张工单不同天可能结果不同）
+docker run -d --name dsh-superagent -p 127.0.0.1:3082:13082 \
+  -e DSH_SUPERAGENT_ACCESS=proxy \
+  -e DSH_SUPERAGENT_APT_PACKAGES="golang-go default-jdk" \
+  -v dsh-home:/home/node/.dsh -v "$PWD/repos:/home/node/src" \
+  ghcr.io/<owner>/dsh-superagent-docker:latest
 ```
 
-`sudo` 并不会削弱容器边界——worker 本来就在容器内以 `danger-full-access` 运行，真正的边界是挂载。
-如果还是想去掉这个特权，把 `BASE_IMAGE` 指向 `docker.m.daocloud.io/library/node:24-bookworm`
-或任意裸 node 镜像；代价是同时失去 jq 和更新的 git，agent 也无法再自己装依赖。
+行为说明：
+
+- 在服务启动**之前**装完，所以不会有工单撞上"装了一半"的工具链。列表与镜像版本一起哈希成
+  `~/.dsh` 下的标记：同一镜像重启不再联网，换新镜像会重装。
+- 安装失败不会把面板挡住：服务照常启动，日志说明失败原因——面板正是你修东西的地方。
+- 版本跟随启动时发行版仓库的版本。要精确版本就在列表里钉（`golang-go=2:1.22~deb12u1`），
+  或者改用构建时装。
+
+`sudo` 仍然留着当兜底，agent 干活时还能自己 `apt-get install`。但那样工具链在工单之间会不一致，
+容器重建后就没了。**某个包被 agent 装了两次，就说明它该进 `DSH_SUPERAGENT_APT_PACKAGES`。**
 
 ## `patches/` 里那个补丁
 
