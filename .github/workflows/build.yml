@@ -159,11 +159,13 @@ jobs:
             -e DSH_SUPERAGENT_SUPERVISE=0 \
             -e DSH_SUPERAGENT_APT_PACKAGES=sl \
             dsh-superagent:ci
+          # Assert on dpkg, not on PATH: Debian puts `sl` in /usr/games.
           for _ in $(seq 1 90); do
-            if docker exec dsh-pkg sh -c 'command -v sl' >/dev/null 2>&1; then break; fi
+            if docker exec dsh-pkg sh -c 'dpkg -s sl >/dev/null 2>&1'; then break; fi
             sleep 4
           done
-          docker exec dsh-pkg sh -c 'command -v sl'
+          docker exec dsh-pkg sh -c 'dpkg -s sl | head -3'
+          docker exec dsh-pkg sh -c 'ls -l /usr/games/sl'
           docker logs dsh-pkg 2>&1 | grep -E 'installing declared packages: sl'
           docker logs dsh-pkg 2>&1 | grep -E 'declared packages installed: sl'
           # The list and the image revision form a marker, so a restart of the
@@ -181,6 +183,14 @@ jobs:
           docker logs dsh-pkg || true
           docker rm -f dsh-pkg
           exit 1
+
+      - name: Package container log on failure
+        if: failure()
+        run: |
+          echo "--- dsh-pkg log ---"
+          docker logs dsh-pkg 2>&1 | tail -40 || true
+          echo "--- sudo and apt as the image's user ---"
+          docker exec dsh-pkg sh -lc 'id; sudo -n true && echo SUDO_OK || echo SUDO_FAILED' || true
 
       - name: Service log on failure
         if: failure()
